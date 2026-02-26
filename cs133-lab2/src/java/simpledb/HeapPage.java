@@ -240,6 +240,23 @@ public class HeapPage implements Page {
     public void deleteTuple(Tuple t) throws DbException {
         // TODO: some code goes here
         // not necessary for lab1
+        if(!t.getTupleDesc().equals(td)){
+            throw new DbException("TupleDesc mismatch");
+        }
+        int tupleNo = -1;
+        for(; tupleNo < numSlots; tupleNo++){
+            if(!isSlotUsed(tupleNo)){
+                continue;
+            }
+            if(tuples[tupleNo].equals(t)){
+                tuples[tupleNo] = null;
+                header[tupleNo / 8] &= ~(1 << (tupleNo % 8));
+                break;
+            }
+        }
+        if(tupleNo == numSlots){
+            throw new DbException("Tuple not found");
+        }
     }
 
     /**
@@ -250,8 +267,22 @@ public class HeapPage implements Page {
      * @param t The tuple to add.
      */
     public void insertTuple(Tuple t) throws DbException {
-        // TODO: some code goes here
-        // not necessary for lab1
+        if(t.getTupleDesc().equals(td)){
+            throw new DbException("TupleDesc mismatch");
+        }
+        int tupleNo = -1;
+        for(; tupleNo < numSlots; tupleNo++){
+            if(!isSlotUsed(tupleNo)){
+                break;
+            }
+        }
+        if(tupleNo == numSlots){
+            throw new DbException("Page is full");
+        }
+        tuples[tupleNo] = t;
+        header[tupleNo / 8] |= 1 << (tupleNo % 8);
+
+        t.setRecordId(new RecordId(pid, tupleNo));
     }
 
     /**
@@ -305,6 +336,14 @@ public class HeapPage implements Page {
     private void markSlotUsed(int i, boolean value) {
         // TODO: some code goes here
         // not necessary for lab1
+        int byteIndex = i / 8;
+        int bitOffset = i % 8;
+        byte mask = (byte) (1 << bitOffset);
+        if(value){
+            header[byteIndex] |= mask;
+        } else {
+            header[byteIndex] &= ~mask;
+        }
     }
 
     /**
