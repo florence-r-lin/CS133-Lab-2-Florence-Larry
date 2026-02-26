@@ -88,6 +88,9 @@ public class BufferPool {
         }
 
         DbFile myFile = catalog.getDatabaseFile(pid.getTableId());
+        if (myFile == null) {
+            throw new DbException("table " + pid.getTableId() + " not found in catalog");
+        }
         Page page = myFile.readPage(pid);
         if (pageCache.size() >= numPages) {
             throw new DbException("Error, bufferpool's cache has overflowed. Implement eviction policy!");
@@ -162,8 +165,17 @@ public class BufferPool {
      */
     public void insertTuple(TransactionId tid, int tableId, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
-        // TODO: some code goes here
-        // not necessary for lab1
+        DbFile myFile = catalog.getDatabaseFile(tableId);
+        if(myFile == null){
+            throw new DbException("Table not found");
+        }
+
+        ArrayList<Page> dirtyPages = myFile.insertTuple(tid, t);
+
+        for(Page page : dirtyPages){
+            page.markDirty(true, tid);
+            pageCache.put(page.getId(), page);
+        }
     }
 
     /**
@@ -181,8 +193,21 @@ public class BufferPool {
      */
     public void deleteTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
-        // TODO: some code goes here
-        // not necessary for lab1
+        RecordId rid = t.getRecordId();
+        if (rid == null) {
+            throw new DbException("tuple has no RecordId");
+        }
+        int tableId = rid.getPageId().getTableId();
+        
+        DbFile dbFile = catalog.getDatabaseFile(tableId);
+        if (dbFile == null) {
+            throw new DbException("table " + tableId + " not found in catalog");
+        }
+        ArrayList<Page> dirtyPages = dbFile.deleteTuple(tid, t);
+        for (Page p : dirtyPages) {
+            p.markDirty(true, tid);
+            pageCache.put(p.getId(), p);
+        }
     }
 
     /**
