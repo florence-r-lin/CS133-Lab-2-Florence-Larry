@@ -85,8 +85,15 @@ public class HeapFile implements DbFile {
 
     // see DbFile.java for javadocs
     public void writePage(Page page) throws IOException {
-        // TODO: some code goes here
-        // not necessary for lab1
+        HeapPageId pid = (HeapPageId) page.getId();
+        if (pid.getTableId() != getId()) {
+            throw new IllegalArgumentException("page does not belong to this file");
+        }
+        long offset = pid.getPageNumber() * (long) pageSize;
+        RandomAccessFile raf = new RandomAccessFile(heapFile, "rw");
+        raf.seek(offset);
+        raf.write(page.getPageData());
+        raf.close();
     }
 
     /**

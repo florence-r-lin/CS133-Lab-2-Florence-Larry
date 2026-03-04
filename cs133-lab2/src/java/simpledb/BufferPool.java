@@ -28,7 +28,7 @@ public class BufferPool {
     private final int numPages;
 
     private final Catalog catalog;
-    private final HashMap<PageId, Page> pageCache;
+    private final LinkedHashMap<PageId, Page> pageCache;
 
     // private List<Page> pages; 
 
@@ -45,7 +45,7 @@ public class BufferPool {
     public BufferPool(int numPages, Catalog catalog) {
         this.numPages = numPages;
         this.catalog = Objects.requireNonNull(catalog, "catalog");
-        this.pageCache = new HashMap<>(numPages);
+        this.pageCache = new LinkedHashMap<>(numPages, 0.75f, false);
     }
 
     public static int getPageSize() {
@@ -80,11 +80,15 @@ public class BufferPool {
      * @param pid the ID of the requested page
      * @param perm the requested permissions on the page
      */
-    public Page getPage(TransactionId tid, PageId pid, Permissions perm)
+    public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm)
             throws TransactionAbortedException, DbException {
         Page cached = pageCache.get(pid);
         if (cached != null) {
             return cached;
+        }
+
+        while (pageCache.size() >= numPages) {
+            evictPage();
         }
 
         DbFile myFile = catalog.getDatabaseFile(pid.getTableId());
@@ -92,9 +96,6 @@ public class BufferPool {
             throw new DbException("table " + pid.getTableId() + " not found in catalog");
         }
         Page page = myFile.readPage(pid);
-        if (pageCache.size() >= numPages) {
-            throw new DbException("Error, bufferpool's cache has overflowed. Implement eviction policy!");
-        }
         pageCache.put(pid, page);
         return page;
     }
@@ -237,8 +238,15 @@ public class BufferPool {
      * @param pid an ID indicating the page to flush
      */
     private synchronized void flushPage(PageId pid) throws IOException {
-        // TODO: some code goes here
-        // not necessary for lab 1
+        Page tempPage = pageCache.get(pid);
+        if (tempPage == null || tempPage.isDirty() == null) {
+            return;
+        }
+        DbFile tempDBFile = catalog.getDatabaseFile(pid.getTableId());
+        if (tempDBFile != null) {
+            tempDBFile.writePage(tempPage);
+        }
+        tempPage.markDirty(false, null);
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -251,9 +259,23 @@ public class BufferPool {
     /**
      * Discards a page from the buffer pool.
      * Flushes the page to disk to ensure dirty pages are updated on disk.
+     * Our method takes advantage of LinkedHashMap's internal FIFO 
+     * insertion order to evict the oldest page.
      */
     private synchronized void evictPage() throws DbException {
-        // TODO: some code goes here
-        // not necessary for lab1
+        if (pageCache.isEmpty()) {
+            return;
+        }
+        Iterator<PageId> mapIter = pageCache.keySet().iterator();
+        PageId oldestPid = mapIter.next();
+        Page oldestPage = pageCache.get(oldestPid);
+        if (oldestPage.isDirty() != null) {
+            try {
+                flushPage(oldestPid);
+            } catch (IOException e) {
+                throw new DbException("failed to flush dirty page while evicting: " + e.getMessage());
+            }
+        }
+        pageCache.remove(oldestPid);
     }
 }
